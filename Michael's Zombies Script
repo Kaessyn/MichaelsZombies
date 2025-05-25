@@ -1,0 +1,198 @@
+-- Carregar a biblioteca Fluent
+local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+
+-- Criar a janela principal
+local Window = Fluent:CreateWindow({
+    Title = "Zombie Control Panel",
+    SubTitle = "Aimbot & ESP Settings",
+    TabWidth = 160,
+    Size = UDim2.fromOffset(580, 460),
+    Acrylic = true,
+    Theme = "Dark",
+    MinimizeKey = Enum.KeyCode.LeftControl
+})
+
+-- Criar abas
+local Tabs = {
+    Main = Window:AddTab({ Title = "Main", Icon = "" }),
+    Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
+}
+
+-- Variáveis de controle
+local aimbotEnabled = false
+local espEnabled = false
+local fovRadius = 150
+local espColor = Color3.fromRGB(0, 170, 255)
+
+-- Referências
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local localPlayer = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+local zombiesFolder = workspace:WaitForChild("Ignore"):WaitForChild("Zombies")
+
+-- Lista de zumbis
+local zombies = {}
+
+-- Função para verificar se um zumbi está vivo
+local function isAlive(zombie)
+    local humanoid = zombie:FindFirstChildOfClass("Humanoid")
+    return humanoid and humanoid.Health > 0
+end
+
+-- Função para adicionar destaque (Highlight) a um zumbi
+local function addHighlight(zombie)
+    if not zombie:FindFirstChild("Highlight") then
+        local highlight = Instance.new("Highlight")
+        highlight.Name = "Highlight"
+        highlight.FillColor = espColor
+        highlight.FillTransparency = 0.5
+        highlight.OutlineColor = espColor
+        highlight.OutlineTransparency = 0
+        highlight.Adornee = zombie
+        highlight.Parent = zombie
+    end
+end
+
+-- Função para remover destaque de um zumbi
+local function removeHighlight(zombie)
+    local highlight = zombie:FindFirstChild("Highlight")
+    if highlight then
+        highlight:Destroy()
+    end
+end
+
+-- Função para atualizar a lista de zumbis
+local function updateZombies()
+    zombies = {}
+    for _, zombie in ipairs(zombiesFolder:GetChildren()) do
+        if zombie:IsA("Model") and isAlive(zombie) then
+            table.insert(zombies, zombie)
+            if espEnabled then
+                addHighlight(zombie)
+            else
+                removeHighlight(zombie)
+            end
+        else
+            removeHighlight(zombie)
+        end
+    end
+end
+
+-- Atualizar zumbis periodicamente
+RunService.RenderStepped:Connect(updateZombies)
+
+-- Aimbot
+local aiming = false
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if input.UserInputType == Enum.UserInputType.MouseButton2 and not gameProcessed then
+        aiming = true
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then
+        aiming = false
+    end
+end)
+
+local function getClosestZombie()
+    local closest = nil
+    local shortestDist = fovRadius
+
+    for _, zombie in ipairs(zombies) do
+        local head = zombie:FindFirstChild("Head")
+        if head then
+            local screenPos, onScreen = camera:WorldToViewportPoint(head.Position)
+            if onScreen then
+                local dist = (Vector2.new(screenPos.X, screenPos.Y) - camera.ViewportSize / 2).Magnitude
+                if dist <= shortestDist then
+                    shortestDist = dist
+                    closest = head
+                end
+            end
+        end
+    end
+
+    return closest
+end
+
+RunService.RenderStepped:Connect(function()
+    if aimbotEnabled and aiming then
+        local target = getClosestZombie()
+        if target then
+            local camCFrame = camera.CFrame
+            local direction = (target.Position - camCFrame.Position).Unit
+            local targetCFrame = CFrame.new(camCFrame.Position, camCFrame.Position + direction)
+            camera.CFrame = camCFrame:Lerp(targetCFrame, 0.15)
+        end
+    end
+end)
+
+-- Interface Fluent
+
+-- Seção principal
+local MainSection = Tabs.Main:AddSection("Controls")
+
+MainSection:AddToggle("AimbotToggle", {
+    Title = "Enable Aimbot",
+    Default = false,
+    Callback = function(state)
+        aimbotEnabled = state
+    end
+})
+
+MainSection:AddToggle("ESPToggle", {
+    Title = "Enable ESP",
+    Default = false,
+    Callback = function(state)
+        espEnabled = state
+        updateZombies()
+    end
+})
+
+-- Seção de configurações
+local SettingsSection = Tabs.Settings:AddSection("Settings")
+
+SettingsSection:AddSlider("FOVSlider", {
+    Title = "FOV Radius",
+    Description = "Adjust the aimbot's field of view radius.",
+    Default = 150,
+    Min = 50,
+    Max = 500,
+    Rounding = 0,
+    Callback = function(value)
+        fovRadius = value
+    end
+})
+
+SettingsSection:AddColorpicker("ESPColorPicker", {
+    Title = "ESP Color",
+    Description = "Choose the color for the ESP highlight.",
+    Default = Color3.fromRGB(0, 170, 255),
+    Callback = function(value)
+        espColor = value
+        for _, zombie in ipairs(zombies) do
+            local highlight = zombie:FindFirstChild("Highlight")
+            if highlight then
+                highlight.FillColor = espColor
+                highlight.OutlineColor = espColor
+            end
+        end
+    end
+})
+
+-- Gerenciadores de interface e salvamento
+local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
+local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
+
+SaveManager:SetLibrary(Fluent)
+InterfaceManager:SetLibrary(Fluent)
+
+InterfaceManager:BuildInterfaceSection(Tabs.Settings)
+SaveManager:BuildConfigSection(Tabs.Settings)
+
+-- Selecionar a aba principal por padrão
+Window:SelectTab(1)
